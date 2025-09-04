@@ -1,232 +1,158 @@
-import base64
-import io
-import os
-import time
-from typing import Optional, List
+import base64, io, os, math, asyncio
+from typing import Optional, Tuple
+import runpod
 
-import numpy as np
-from PIL import Image
-from fastapi import FastAPI
-from pydantic import BaseModel, Field
-
+from PIL import Image, ImageOps
+import requests
 import torch
 from diffusers import (
-    AutoencoderKL,
-    ControlNetModel,
     StableDiffusionXLControlNetPipeline,
-    DDIMScheduler,
+    ControlNetModel
 )
-from transformers import CLIPTextModel, CLIPTokenizer
+# depth preprocessor (MiDaS) for ControlNet
+from controlnet_aux import MidasDetector
 
-# depth preprocessor
-from controlnet_aux.midas import MidasDetector
-
-# -------- Settings --------
-HF_TOKEN = os.getenv("HF_TOKEN", None)
-
-MODEL_BASE = "stabilityai/stable-diffusion-xl-base-1.0"
-MODEL_VAE = "madebyollin/sdxl-vae-fp16-fix"           # good VAE for SDXL
-CONTROLNET_DEPTH = "diffusers/controlnet-depth-sdxl-1.0"  # SDXL depth ControlNet
-
-# device / dtype
+# ------------------------
+# Lazy global pipeline
+# ------------------------
+PIPE = None
+DEPTH = None
+DTYPE = torch.float16 if torch.cuda.is_available() else torch.float32
 DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-DTYPE = torch.float16 if DEVICE == "cuda" else torch.float32
 
-app = FastAPI(title="Creatogen Photoshoot Worker", version="0.1.0")
+SDXL_BASE = os.getenv("SDXL_BASE", "stabilityai/stable-diffusion-xl-base-1.0")
+CN_DEPTH = os.getenv("CN_DEPTH", "diffusers/controlnet-depth-sdxl-1.0")
 
-# Global objects
-_pipe = None
-_depth = None
+def _to_png_b64(img: Image.Image) -> str:
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
 
-
-def _b64_to_pil(b64: str) -> Image.Image:
+def _from_b64(b64: str) -> Image.Image:
     raw = base64.b64decode(b64.split(",")[-1])
     return Image.open(io.BytesIO(raw)).convert("RGB")
 
+def _from_url(url: str) -> Image.Image:
+    r = requests.get(url, timeout=30)
+    r.raise_for_status()
+    return Image.open(io.BytesIO(r.content)).convert("RGB")
 
-def _pil_to_b64(img: Image.Image, fmt: str = "PNG") -> str:
-    buf = io.BytesIO()
-    img.save(buf, format=fmt)
-    return base64.b64encode(buf.getvalue()).decode("utf-8")
-
-
-def _letterbox(im: Image.Image, out_w: int, out_h: int, bg=(255, 255, 255)) -> Image.Image:
-    """Keep aspect, pad to exactly (out_w, out_h)."""
-    w, h = im.size
-    scale = min(out_w / w, out_h / h)
-    nw, nh = int(w * scale), int(h * scale)
-    im2 = im.resize((nw, nh), Image.LANCZOS)
-    canvas = Image.new("RGB", (out_w, out_h), bg)
-    ox, oy = (out_w - nw) // 2, (out_h - nh) // 2
-    canvas.paste(im2, (ox, oy))
+def _fit_letterbox(img: Image.Image, W: int, H: int, bg=(255,255,255)) -> Image.Image:
+    iw, ih = img.size
+    scale = min(W/iw, H/ih)
+    nw, nh = max(1,int(iw*scale)), max(1,int(ih*scale))
+    img2 = img.resize((nw, nh), Image.LANCZOS)
+    canvas = Image.new("RGB", (W, H), bg)
+    ox, oy = (W - nw)//2, (H - nh)//2
+    canvas.paste(img2, (ox, oy))
     return canvas
 
+def _resolve_size(aspect_ratio: Optional[str], width: Optional[int], height: Optional[int]) -> Tuple[int, int]:
+    if width and height:
+        return width, height
+    # default SDXL square
+    if not aspect_ratio:
+        return 1024, 1024
+    ar = {
+        "1:1": (1,1), "4:5": (4,5), "3:4": (3,4), "2:3": (2,3),
+        "16:9": (16,9), "9:16": (9,16)
+    }.get(aspect_ratio, (1,1))
+    base_long = 1024
+    w, h = ar
+    scale = (base_long / w) if w >= h else (base_long / h)
+    W = int(math.floor(w * scale / 64) * 64)
+    H = int(math.floor(h * scale / 64) * 64)
+    return max(512, W), max(512, H)
 
-def load_pipeline():
-    global _pipe, _depth
-
-    if _pipe is not None:
-        return _pipe
-
-    print("[load] loading SDXL base + VAE + ControlNet (depth)…")
-    controlnet = ControlNetModel.from_pretrained(
-        CONTROLNET_DEPTH, torch_dtype=DTYPE, use_safetensors=True, token=HF_TOKEN
-    )
-    vae = AutoencoderKL.from_pretrained(MODEL_VAE, torch_dtype=DTYPE, use_safetensors=True, token=HF_TOKEN)
-
+def _load_pipeline():
+    global PIPE, DEPTH
+    if PIPE is not None:
+        return
+    controlnet = ControlNetModel.from_pretrained(CN_DEPTH, torch_dtype=DTYPE)
     pipe = StableDiffusionXLControlNetPipeline.from_pretrained(
-        MODEL_BASE,
-        controlnet=controlnet,
-        vae=vae,
-        torch_dtype=DTYPE,
-        use_safetensors=True,
-        token=HF_TOKEN,
+        SDXL_BASE, controlnet=controlnet,
+        torch_dtype=DTYPE, variant="fp16", use_safetensors=True
     )
-
-    # speed-ups
-    if DEVICE == "cuda":
-        pipe.enable_xformers_memory_efficient_attention()
-    pipe.scheduler = DDIMScheduler.from_config(pipe.scheduler.config)
-
     pipe.to(DEVICE)
-    pipe.set_progress_bar_config(disable=True)
+    pipe.enable_vae_tiling()
+    try:
+        pipe.enable_xformers_memory_efficient_attention()
+    except Exception:
+        pass
+    PIPE = pipe
+    DEPTH = MidasDetector.from_pretrained("lllyasviel/Annotators")
 
-    # depth preprocessor
-    _depth = MidasDetector.from_pretrained("lllyasviel/Annotators")
-
-    _pipe = pipe
-    print("[load] pipeline ready.")
-    return _pipe
-
-
-# ---------- Schemas ----------
-class Overlay(BaseModel):
-    headline: Optional[str] = ""
-    sub: Optional[str] = ""
-    brand: Optional[str] = ""
-    layout: Optional[str] = "bottom"        # "top" | "bottom"
-    banner_pct: float = 0.18
-    bg: str = "#000000CC"
-    fg: str = "#FFFFFF"
-
-
-class ImageIn(BaseModel):
-    b64: Optional[str] = None
-    url: Optional[str] = None  # not used in this first version
-
-
-class GenerateIn(BaseModel):
-    prompt: str = Field(..., description="Positive prompt for the scene/background.")
-    negative_prompt: Optional[str] = Field(default="low quality, blurry, artifacts")
-    images: List[ImageIn]
-
-    width: int = 1024
-    height: int = 1024
-    num_infer_steps: int = 28
-    guidance_scale: float = 5.0
-    seed: Optional[int] = None
-
-    # Control strength
-    controlnet_strength: float = 0.9
-
-    # Optional overlay (drawn client-side usually; we can ignore here)
-    overlay: Optional[Overlay] = None
-
-
-class VariantOut(BaseModel):
-    image_b64: str
-    format: str = "png"
-    seed: int
-    width: int
-    height: int
-
-
-class GenerateOut(BaseModel):
-    variants: List[VariantOut]
-    meta: dict
-
-
-@app.get("/health")
-def health():
-    return {"ok": True, "device": DEVICE}
-
-
-@app.on_event("startup")
-def _startup():
-    load_pipeline()
-
-
-@app.post("/generate", response_model=GenerateOut)
-def generate(req: GenerateIn):
+# ------------------------
+# Handler
+# ------------------------
+def handler(event):
     """
-    1) Auto-pick the sharpest of up to N uploaded product photos (simple variance-of-Laplacian).
-    2) Compute a depth map for that image.
-    3) Run SDXL + ControlNet(Depth) using the user's prompt to synthesize background, lighting, shadows.
-    """
-    pipe = load_pipeline()
-
-    if not req.images:
-        return {"variants": [], "meta": {"error": "No images"}}
-
-    # Decode to PIL and keep a normalized list
-    decoded: list[Image.Image] = []
-    for item in req.images:
-        if item.b64:
-            decoded.append(_b64_to_pil(item.b64))
-        # (URL fetch omitted for simplicity)
-
-    # Auto-pick: use a quick sharpness metric
-    def sharpness(im: Image.Image) -> float:
-        import cv2
-        arr = np.array(im.convert("L"))
-        return cv2.Laplacian(arr, cv2.CV_64F).var()
-
-    picked = max(decoded, key=sharpness)
-
-    # Fit to requested canvas (keeps aspect)
-    product_rgb = _letterbox(picked, req.width, req.height, bg=(255, 255, 255))
-
-    # Prepare depth map via MiDaS
-    depth_image = _depth(product_rgb)
-
-    # Seed
-    generator = torch.Generator(device=DEVICE)
-    seed = req.seed if isinstance(req.seed, int) else int(time.time()) % 10_000_000
-    generator.manual_seed(seed)
-
-    # Run pipeline
-    images = pipe(
-        prompt=req.prompt,
-        negative_prompt=req.negative_prompt,
-        image=product_rgb,          # conditioning image for SDXL (used as initial content)
-        controlnet_conditioning_image=depth_image,
-        width=req.width,
-        height=req.height,
-        num_inference_steps=req.num_infer_steps,
-        guidance_scale=req.guidance_scale,
-        controlnet_conditioning_scale=req.controlnet_strength,
-        generator=generator,
-    ).images
-
-    # Return 2 variants (run twice w/ same depth, different minor noise)
-    variants = []
-    for i, im in enumerate(images[:2]):
-        b64 = _pil_to_b64(im, fmt="PNG")
-        variants.append(
-            VariantOut(
-                image_b64=b64,
-                format="png",
-                seed=seed + i,
-                width=req.width,
-                height=req.height,
-            )
-        )
-
-    meta = {
-        "model_base": MODEL_BASE,
-        "controlnet": CONTROLNET_DEPTH,
-        "width": req.width,
-        "height": req.height,
-        "seed": seed,
+    Input schema:
+    {
+      "prompt": str,
+      "negative_prompt": str (opt),
+      "image_b64": str (opt) OR "image_url": str (opt)  <-- provide one,
+      "width": int (opt), "height": int (opt), "aspect_ratio": "1:1" | ... (opt),
+      "guidance_scale": float (opt, default 5.5),
+      "denoise": float (opt, default 0.45),           # lower => more product preservation
+      "seed": int (opt),
+      "strength": float (alias of denoise)
     }
-    return GenerateOut(variants=variants, meta=meta)
+    """
+    try:
+        _load_pipeline()
+
+        inp = event.get("input", {}) if isinstance(event, dict) else {}
+        prompt = inp.get("prompt") or "studio product photo, premium lighting"
+        negative = inp.get("negative_prompt", "low quality, watermark, logo, text")
+        W, H = _resolve_size(inp.get("aspect_ratio"), inp.get("width"), inp.get("height"))
+
+        # denoise/strength (img2img)
+        denoise = float(inp.get("denoise", inp.get("strength", 0.45)))
+        guidance = float(inp.get("guidance_scale", 5.5))
+        seed = int(inp.get("seed")) if inp.get("seed") is not None else None
+        generator = torch.Generator(device=DEVICE).manual_seed(seed) if seed else None
+
+        # input image
+        img: Optional[Image.Image] = None
+        if inp.get("image_b64"):
+            img = _from_b64(inp["image_b64"])
+        elif inp.get("image_url"):
+            img = _from_url(inp["image_url"])
+        else:
+            return {"error": "Provide image_b64 or image_url"}
+
+        # enforce size (letterbox) to requested canvas
+        init_img = _fit_letterbox(img, W, H, bg=(255,255,255))
+
+        # depth map for controlnet
+        depth = DEPTH(init_img)  # returns PIL single-channel map sized to init_img
+
+        # run pipeline (img2img with controlnet)
+        with torch.inference_mode():
+            out = PIPE(
+                prompt=prompt,
+                negative_prompt=negative,
+                image=init_img,
+                control_image=depth,
+                guidance_scale=guidance,
+                strength=denoise,
+                generator=generator,
+                num_inference_steps=28,   # keep reasonably fast
+            )
+
+        result: Image.Image = out.images[0]
+        b64_png = _to_png_b64(result)
+
+        return {
+            "width": W, "height": H,
+            "guidance_scale": guidance, "denoise": denoise,
+            "format": "png",
+            "image_b64": b64_png
+        }
+
+    except Exception as e:
+        return {"error": str(e)}
+
+# Start serverless
+runpod.serverless.start({"handler": handler})

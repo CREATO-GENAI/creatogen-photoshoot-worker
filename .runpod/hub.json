@@ -1,0 +1,29 @@
+{
+  "title": "Creatogen Photoshoot Worker",
+  "description": "SDXL + ControlNet Depth (img2img). Letterbox + prompt → photoreal scene/background while keeping product pixels.",
+  "type": "serverless",
+  "category": "image",
+  "iconUrl": "https://raw.githubusercontent.com/github/explore/main/topics/stable-diffusion/stable-diffusion.png",
+  "config": {
+    "runtime": "GPU",
+    "containerDiskInGb": 20,
+    "allowedGpuClasses": ["A10G", "L4", "A100", "H100"]
+  },
+  "presets": [
+    {
+      "id": "default",
+      "label": "Default",
+      "input": {
+        "prompt": "studio product shoot, soft light, clean premium scene",
+        "negative_prompt": "low quality, artifacts, text, watermark",
+        "width": 1024,
+        "height": 1024,
+        "guidance_scale": 5.5,
+        "denoise": 0.45,
+        "seed": 12345,
+        "aspect_ratio": "1:1",
+        "image_url": "https://huggingface.co/datasets/hf-internal-testing/diffusers-images/resolve/main/benz.jpg"
+      }
+    }
+  ]
+}

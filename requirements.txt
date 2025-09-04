@@ -1,8 +1,8 @@
-# Core
-torch==2.3.1+cu121 ; sys_platform == 'linux'
-torchvision==0.18.1+cu121 ; sys_platform == 'linux'
 --extra-index-url https://download.pytorch.org/whl/cu121
 
+# Core (CUDA 12.1)
+torch==2.3.1+cu121 ; sys_platform == 'linux'
+torchvision==0.18.1+cu121 ; sys_platform == 'linux'
 xformers==0.0.27.post2
 
 # Diffusion stack
@@ -10,14 +10,19 @@ diffusers==0.30.0
 transformers>=4.42.0
 accelerate>=0.31.0
 safetensors>=0.4.3
+huggingface_hub>=0.23.0
 
 # ControlNet depth preprocessor
 controlnet-aux==0.0.9
 opencv-python-headless==4.10.0.84
 Pillow>=10.4.0
 numpy>=1.26.0
+requests>=2.31.0
 
-# API
+# RunPod serverless (for handler mode)
+runpod>=1.6.0
+
+# (Optional) local HTTP dev only
 fastapi==0.111.0
 uvicorn[standard]==0.30.3
 python-multipart==0.0.9

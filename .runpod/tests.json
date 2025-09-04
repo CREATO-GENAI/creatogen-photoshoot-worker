@@ -1,0 +1,15 @@
+[
+  {
+    "name": "basic-sdxl-depth",
+    "input": {
+      "prompt": "premium studio product shoot on neutral hero set, realistic global illumination",
+      "negative_prompt": "lowres, cartoon, deformed, watermark",
+      "width": 1024,
+      "height": 1024,
+      "guidance_scale": 5.5,
+      "denoise": 0.45,
+      "aspect_ratio": "1:1",
+      "image_url": "https://huggingface.co/datasets/hf-internal-testing/diffusers-images/resolve/main/benz.jpg"
+    }
+  }
+]
