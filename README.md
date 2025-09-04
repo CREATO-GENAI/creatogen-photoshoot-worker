@@ -34,3 +34,5 @@ RESPONSE -
   ],
   "meta": { "model_base": "...", "controlnet": "...", "width": 1024, "height": 1024, "seed": 12345 }
 }
+
+[![Runpod](https://api.runpod.io/badge/CREATO-GENAI/creatogen-photoshoot-worker)](https://console.runpod.io/hub/CREATO-GENAI/creatogen-photoshoot-worker)
