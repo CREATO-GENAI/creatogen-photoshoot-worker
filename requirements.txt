@@ -1,6 +1,9 @@
-# Core (CUDA 12.1)
-torch==2.3.1+cu121 ; sys_platform == 'linux'
-torchvision==0.18.1+cu121 ; sys_platform == 'linux'
+# Let pip see CUDA wheels
+--extra-index-url https://download.pytorch.org/whl/cu121
+
+# Core CUDA stack (aligned)
+torch==2.4.0+cu121 ; sys_platform == 'linux'
+torchvision==0.19.0+cu121 ; sys_platform == 'linux'
 xformers==0.0.27.post2
 
 # Diffusion stack
@@ -17,7 +20,7 @@ Pillow>=10.4.0
 numpy>=1.26.0
 requests>=2.31.0
 
-# RunPod serverless (for handler mode)
+# RunPod serverless
 runpod>=1.6.0
 
 # (Optional) local HTTP dev only
