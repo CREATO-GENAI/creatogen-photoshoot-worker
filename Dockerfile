@@ -1,18 +1,26 @@
 # Dockerfile
-FROM runpod/pytorch:2.1.2-py3.10-cuda12.1
+# Uses official PyTorch image with CUDA 12.1 and cuDNN 9, includes Python 3.10
+FROM pytorch/pytorch:2.4.0-cuda12.1-cudnn9-runtime
 
-WORKDIR /app
-COPY requirements.txt .
-
-# keep wheels out of the image layer + faster installs
-ENV PIP_NO_CACHE_DIR=1 \
-    HF_HUB_DISABLE_TELEMETRY=1 \
+ENV DEBIAN_FRONTEND=noninteractive \
+    PIP_NO_CACHE_DIR=1 \
     PYTHONUNBUFFERED=1
 
-RUN pip install -U pip && \
-    pip install -r requirements.txt
+# Minimal OS deps you likely need for image/vision + git
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git ffmpeg libgl1 libglib2.0-0 \
+ && rm -rf /var/lib/apt/lists/*
 
-COPY app.py .
+WORKDIR /app
 
-# run your serverless worker / app
-CMD ["python", "-u", "app.py"]
+# Install Python deps (minus torch/torchvision/xformers/triton)
+COPY requirements.txt .
+RUN python -m pip install --upgrade pip \
+ && pip install --no-cache-dir -r requirements.txt
+
+# Your code
+COPY app.py /app/app.py
+
+# If this is a worker, just run your script.
+# If you serve FastAPI with uvicorn, change the CMD accordingly (see below).
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "3000"]
