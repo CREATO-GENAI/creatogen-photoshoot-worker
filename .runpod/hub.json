@@ -4,9 +4,12 @@
   "type": "serverless",
   "category": "image",
   "iconUrl": "https://raw.githubusercontent.com/github/explore/main/topics/stable-diffusion/stable-diffusion.png",
+
+  "handler": "app:handler",
+
   "config": {
     "runtime": "GPU",
-    "containerDiskInGb": 20,
+    "containerDiskInGb": 30,
     "allowedGpuClasses": ["A10G", "L4", "A100", "H100"]
   },
   "presets": [
