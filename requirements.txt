@@ -1,29 +1,19 @@
-# Let pip see CUDA wheels
---extra-index-url https://download.pytorch.org/whl/cu121
-
-# Core CUDA stack (aligned)
-torch==2.4.0+cu121 ; sys_platform == 'linux'
-torchvision==0.19.0+cu121 ; sys_platform == 'linux'
-xformers==0.0.27.post2
-
-# Diffusion stack
-diffusers==0.30.0
-transformers>=4.42.0
-accelerate>=0.31.0
-safetensors>=0.4.3
-huggingface_hub>=0.23.0
-
-# ControlNet depth preprocessor
-controlnet-aux==0.0.9
-opencv-python-headless==4.10.0.84
-Pillow>=10.4.0
-numpy>=1.26.0
-requests>=2.31.0
-
-# RunPod serverless
-runpod>=1.6.0
-
-# (Optional) local HTTP dev only
+runpod==1.7.13
 fastapi==0.111.0
-uvicorn[standard]==0.30.3
+uvicorn==0.30.3
 python-multipart==0.0.9
+
+# ML stack (no torch/torchvision/xformers here)
+diffusers==0.30.0
+transformers==4.56.0
+accelerate==1.10.1
+safetensors==0.6.2
+huggingface_hub==0.34.4
+tokenizers==0.22.0
+opencv-python-headless==4.10.0.84
+controlnet-aux==0.0.9
+einops==0.8.1
+
+# safe pins that play nicely with torch 2.1 base
+numpy==1.26.4
+scipy==1.11.4
