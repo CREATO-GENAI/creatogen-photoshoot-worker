@@ -2,11 +2,9 @@ name: Build and Push to Runpod Registry
 
 on:
   push:
-    tags:
-      - 'v*'            # build on version tags (e.g. v1.2.3)
-    branches:
-      - main            # also build on main
-  workflow_dispatch:     # allow manual runs
+    tags: ['v*']
+    branches: ['main']
+  workflow_dispatch:
 
 jobs:
   build-and-push:
@@ -16,10 +14,9 @@ jobs:
       id-token: write
 
     env:
-      # --- You only change these two if you rename things ---
       REGISTRY: registry.runpod.net
-      NAMESPACE: CREATO-GENAI                 # your Runpod org/namespace (UI may show CAPS)
-      IMAGE_NAME: creatogen-photoshoot-worker # image repo name you want
+      NAMESPACE: CREATO-GENAI
+      IMAGE_NAME: creatogen-photoshoot-worker
       TAG: ${{ github.ref_type == 'tag' && github.ref_name || 'main' }}
 
     steps:
@@ -31,6 +28,25 @@ jobs:
           echo "NAMESPACE_LC=$(echo '${{ env.NAMESPACE }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
           echo "IMAGE_NAME_LC=$(echo '${{ env.IMAGE_NAME }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
+      # --------- NEW: sanity checks (fail early with clear message) ----------
+      - name: Validate secrets are present
+        run: |
+          test -n "${{ secrets.RUNPOD_REGISTRY_USER }}" || { echo "❌ Missing RUNPOD_REGISTRY_USER secret"; exit 1; }
+          test -n "${{ secrets.RUNPOD_REGISTRY_PASS }}" || { echo "❌ Missing RUNPOD_REGISTRY_PASS secret"; exit 1; }
+          echo "✅ Secrets exist (values are masked)."
+
+      - name: Registry auth probe (HTTP 200 expected)
+        env:
+          USERN: ${{ secrets.RUNPOD_REGISTRY_USER }}
+          PASS:  ${{ secrets.RUNPOD_REGISTRY_PASS }}
+        run: |
+          AUTH=$(printf "%s:%s" "$USERN" "$PASS" | base64 | tr -d '\n')
+          CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Basic $AUTH" https://${{ env.REGISTRY }}/v2/)
+          echo "Registry /v2/ probe → HTTP $CODE"
+          [ "$CODE" = "200" ] || { echo "❌ Registry auth failed (HTTP $CODE). Username must be 'runpod' and password must be a valid rpa_ API key (enabled, Read & Write)."; exit 1; }
+          echo "✅ Registry auth OK."
+      # ----------------------------------------------------------------------
+
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -41,9 +57,8 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          # Secrets you added in GitHub:
-          username: ${{ secrets.RUNPOD_REGISTRY_USER }}  # must be: runpod
-          password: ${{ secrets.RUNPOD_REGISTRY_PASS }}  # your rpa_... API key
+          username: ${{ secrets.RUNPOD_REGISTRY_USER }}   # must be: runpod
+          password: ${{ secrets.RUNPOD_REGISTRY_PASS }}   # your rpa_ API key
 
       - name: Build & Push
         uses: docker/build-push-action@v6
