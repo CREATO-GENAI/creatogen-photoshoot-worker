@@ -3,10 +3,10 @@ name: Build and Push to Runpod Registry
 on:
   push:
     tags:
-      - 'v*'         # builds on releases like v1.0.0
+      - 'v*'              # e.g. v1.2.3
     branches:
-      - main         # also build on pushes to main
-  workflow_dispatch:  # allow manual runs
+      - main              # also run on main
+  workflow_dispatch:      # allow manual runs
 
 jobs:
   build-and-push:
@@ -17,16 +17,19 @@ jobs:
 
     env:
       REGISTRY: registry.runpod.net
-      # 👉 Your Runpod org/namespace slug (use lowercase)
-      NAMESPACE: creato-genai
-      # 👉 Image name you want under that namespace
+      # <<< set these 2 lines to what you want >>>
+      NAMESPACE: CREATO-GENAI                    # will be lowercased by the next step
       IMAGE_NAME: creatogen-photoshoot-worker
-      # Use the tag name when building from a release, otherwise "main"
       TAG: ${{ github.ref_type == 'tag' && github.ref_name || 'main' }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Normalize namespace to lowercase (Docker requires it)
+        run: |
+          echo "NAMESPACE_LC=$(echo '${{ env.NAMESPACE }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+          echo "IMAGE_NAME_LC=$(echo '${{ env.IMAGE_NAME }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -38,19 +41,19 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.RUNPOD_REGISTRY_USER }}
-          password: ${{ secrets.RUNPOD_REGISTRY_PASS }}
+          username: ${{ secrets.RUNPOD_REGISTRY_USER }}   # "runpod"
+          password: ${{ secrets.RUNPOD_REGISTRY_PASS }}   # your long token
 
       - name: Build & Push
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
-          push: true
           platforms: linux/amd64
+          push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ env.TAG }}
-            ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}:latest
+            ${{ env.REGISTRY }}/${{ env.NAMESPACE_LC }}/${{ env.IMAGE_NAME_LC }}:${{ env.TAG }}
+            ${{ env.REGISTRY }}/${{ env.NAMESPACE_LC }}/${{ env.IMAGE_NAME_LC }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
