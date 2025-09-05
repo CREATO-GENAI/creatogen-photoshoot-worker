@@ -1,0 +1,20 @@
+# keep the build context tiny to avoid huge uploads
+.git
+.gitignore
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.env.*
+.cache/
+.dist/
+build/
+dist/
+*.whl
+*.egg-info/
+node_modules/
+.output-image/
+output.tar
+Dockerfile*
+README.md
