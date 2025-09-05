@@ -18,7 +18,7 @@ jobs:
     env:
       REGISTRY: registry.runpod.net
       # 👉 Your Runpod org/namespace slug (use lowercase)
-      NAMESPACE: CREATO-GENAI
+      NAMESPACE: creato-genai
       # 👉 Image name you want under that namespace
       IMAGE_NAME: creatogen-photoshoot-worker
       # Use the tag name when building from a release, otherwise "main"
