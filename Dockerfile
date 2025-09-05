@@ -1,3 +1,4 @@
+ARG CACHE_BUSTER=2025-09-05-1
 FROM python:3.11-slim
 
 ENV DEBIAN_FRONTEND=noninteractive \
