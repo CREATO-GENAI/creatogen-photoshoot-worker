@@ -17,8 +17,8 @@ jobs:
 
     env:
       REGISTRY: registry.runpod.net
-      NAMESPACE: <your-namespace>             # e.g. creato-genai
-      IMAGE_NAME: <your-image-name>           # e.g. creatogen-photoshoot-worker
+      NAMESPACE: runpod             # e.g. creato-genai
+      IMAGE_NAME: creatogen-photoshoot-worker           # e.g. creatogen-photoshoot-worker
       TAG: ${{ github.ref_type == 'tag' && github.ref_name || 'main' }}
 
     steps:
