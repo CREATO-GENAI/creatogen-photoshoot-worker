@@ -3,10 +3,10 @@ name: Build and Push to Runpod Registry
 on:
   push:
     tags:
-      - 'v*'            # builds on releases like v1.0.0
+      - 'v*'         # builds on releases like v1.0.0
     branches:
-      - main            # optional: build on pushes to main
-  workflow_dispatch:     # allow manual runs
+      - main         # also build on pushes to main
+  workflow_dispatch:  # allow manual runs
 
 jobs:
   build-and-push:
@@ -17,8 +17,11 @@ jobs:
 
     env:
       REGISTRY: registry.runpod.net
-      NAMESPACE: runpod             # e.g. creato-genai
-      IMAGE_NAME: creatogen-photoshoot-worker           # e.g. creatogen-photoshoot-worker
+      # 👉 Your Runpod org/namespace slug (use lowercase)
+      NAMESPACE: CREATO-GENAI
+      # 👉 Image name you want under that namespace
+      IMAGE_NAME: creatogen-photoshoot-worker
+      # Use the tag name when building from a release, otherwise "main"
       TAG: ${{ github.ref_type == 'tag' && github.ref_name || 'main' }}
 
     steps:
@@ -44,7 +47,7 @@ jobs:
           context: .
           file: ./Dockerfile
           push: true
-          platforms: linux/amd64           # Runpod GPUs are amd64
+          platforms: linux/amd64
           tags: |
             ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ env.TAG }}
             ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}:latest
