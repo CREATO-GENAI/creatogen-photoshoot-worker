@@ -18,7 +18,7 @@ jobs:
     env:
       REGISTRY: registry.runpod.net
       # <<< set these 2 lines to what you want >>>
-      NAMESPACE: CREATO-GENAI                    # will be lowercased by the next step
+      NAMESPACE: creatogen.ai
       IMAGE_NAME: creatogen-photoshoot-worker
       TAG: ${{ github.ref_type == 'tag' && github.ref_name || 'main' }}
 
