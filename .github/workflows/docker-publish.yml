@@ -2,8 +2,10 @@ name: Build and Push to Runpod Registry
 
 on:
   push:
-    tags: ['v*']
-    branches: ['main']
+    tags:
+      - 'v*'                  # e.g. v1.2.3
+    branches:
+      - main                  # also run on main
   workflow_dispatch:
 
 jobs:
@@ -15,6 +17,7 @@ jobs:
 
     env:
       REGISTRY: registry.runpod.net
+      # <<< your exact RunPod org/namespace (keep case) >>>
       NAMESPACE: CREATO-GENAI
       IMAGE_NAME: creatogen-photoshoot-worker
       TAG: ${{ github.ref_type == 'tag' && github.ref_name || 'main' }}
@@ -23,42 +26,31 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Normalize for Docker (always lowercase)
-        run: |
-          echo "NAMESPACE_LC=$(echo '${{ env.NAMESPACE }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
-          echo "IMAGE_NAME_LC=$(echo '${{ env.IMAGE_NAME }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
-
-      # --------- NEW: sanity checks (fail early with clear message) ----------
-      - name: Validate secrets are present
-        run: |
-          test -n "${{ secrets.RUNPOD_REGISTRY_USER }}" || { echo "❌ Missing RUNPOD_REGISTRY_USER secret"; exit 1; }
-          test -n "${{ secrets.RUNPOD_REGISTRY_PASS }}" || { echo "❌ Missing RUNPOD_REGISTRY_PASS secret"; exit 1; }
-          echo "✅ Secrets exist (values are masked)."
-
-      - name: Registry auth probe (HTTP 200 expected)
-        env:
-          USERN: ${{ secrets.RUNPOD_REGISTRY_USER }}
-          PASS:  ${{ secrets.RUNPOD_REGISTRY_PASS }}
-        run: |
-          AUTH=$(printf "%s:%s" "$USERN" "$PASS" | base64 | tr -d '\n')
-          CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Basic $AUTH" https://${{ env.REGISTRY }}/v2/)
-          echo "Registry /v2/ probe → HTTP $CODE"
-          [ "$CODE" = "200" ] || { echo "❌ Registry auth failed (HTTP $CODE). Username must be 'runpod' and password must be a valid rpa_ API key (enabled, Read & Write)."; exit 1; }
-          echo "✅ Registry auth OK."
-      # ----------------------------------------------------------------------
-
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # Quick, safe sanity check that your secrets are correct (expects HTTP 200)
+      - name: Registry auth probe (HTTP 200 expected)
+        shell: bash
+        env:
+          USERN: runpod
+          PASS: ${{ secrets.RUNPOD_REGISTRY_PASS }}
+        run: |
+          set -euo pipefail
+          AUTH=$(printf "%s:%s" "$USERN" "$PASS" | base64 | tr -d '\n')
+          CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Basic $AUTH" https://${{ env.REGISTRY }}/v2/)
+          echo "Registry /v2/ probe → HTTP $CODE"
+          [ "$CODE" = "200" ] || { echo "❌ Registry auth failed (HTTP $CODE). Username must be 'runpod' and password must be a valid rpa_ API key (enabled, Read & Write)."; exit 1; }
+
       - name: Log in to Runpod Registry
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.RUNPOD_REGISTRY_USER }}   # must be: runpod
-          password: ${{ secrets.RUNPOD_REGISTRY_PASS }}   # your rpa_ API key
+          username: runpod
+          password: ${{ secrets.RUNPOD_REGISTRY_PASS }}
 
       - name: Build & Push
         uses: docker/build-push-action@v6
@@ -68,14 +60,8 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ${{ env.REGISTRY }}/${{ env.NAMESPACE_LC }}/${{ env.IMAGE_NAME_LC }}:${{ env.TAG }}
-            ${{ env.REGISTRY }}/${{ env.NAMESPACE_LC }}/${{ env.IMAGE_NAME_LC }}:latest
+            ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}:${{ env.TAG }}
+            ${{ env.REGISTRY }}/${{ env.NAMESPACE }}/${{ env.IMAGE_NAME }}:latest
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
-
-      - name: Show pushed tags (for logs)
-        run: |
-          echo "Pushed:"
-          echo " - ${{ env.REGISTRY }}/${{ env.NAMESPACE_LC }}/${{ env.IMAGE_NAME_LC }}:${{ env.TAG }}"
-          echo " - ${{ env.REGISTRY }}/${{ env.NAMESPACE_LC }}/${{ env.IMAGE_NAME_LC }}:latest"
