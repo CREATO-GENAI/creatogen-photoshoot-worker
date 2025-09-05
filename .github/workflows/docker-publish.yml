@@ -3,10 +3,10 @@ name: Build and Push to Runpod Registry
 on:
   push:
     tags:
-      - 'v*'              # e.g. v1.2.3
+      - 'v*'            # build on version tags (e.g. v1.2.3)
     branches:
-      - main              # also run on main
-  workflow_dispatch:      # allow manual runs
+      - main            # also build on main
+  workflow_dispatch:     # allow manual runs
 
 jobs:
   build-and-push:
@@ -16,17 +16,17 @@ jobs:
       id-token: write
 
     env:
+      # --- You only change these two if you rename things ---
       REGISTRY: registry.runpod.net
-      # <<< set these 2 lines to what you want >>>
-      NAMESPACE: CREATO-GENAI
-      IMAGE_NAME: creatogen-photoshoot-worker
+      NAMESPACE: CREATO-GENAI                 # your Runpod org/namespace (UI may show CAPS)
+      IMAGE_NAME: creatogen-photoshoot-worker # image repo name you want
       TAG: ${{ github.ref_type == 'tag' && github.ref_name || 'main' }}
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Normalize namespace to lowercase (Docker requires it)
+      - name: Normalize for Docker (always lowercase)
         run: |
           echo "NAMESPACE_LC=$(echo '${{ env.NAMESPACE }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
           echo "IMAGE_NAME_LC=$(echo '${{ env.IMAGE_NAME }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
@@ -41,8 +41,9 @@ jobs:
         uses: docker/login-action@v3
         with:
           registry: ${{ env.REGISTRY }}
-          username: ${{ secrets.RUNPOD_REGISTRY_USER }}   # "runpod"
-          password: ${{ secrets.RUNPOD_REGISTRY_PASS }}   # your long token
+          # Secrets you added in GitHub:
+          username: ${{ secrets.RUNPOD_REGISTRY_USER }}  # must be: runpod
+          password: ${{ secrets.RUNPOD_REGISTRY_PASS }}  # your rpa_... API key
 
       - name: Build & Push
         uses: docker/build-push-action@v6
@@ -57,3 +58,9 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           provenance: false
+
+      - name: Show pushed tags (for logs)
+        run: |
+          echo "Pushed:"
+          echo " - ${{ env.REGISTRY }}/${{ env.NAMESPACE_LC }}/${{ env.IMAGE_NAME_LC }}:${{ env.TAG }}"
+          echo " - ${{ env.REGISTRY }}/${{ env.NAMESPACE_LC }}/${{ env.IMAGE_NAME_LC }}:latest"
