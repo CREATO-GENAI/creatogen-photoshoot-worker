@@ -19,7 +19,7 @@ jobs:
       REGISTRY: registry.runpod.net
       # <<< set these 2 lines to what you want >>>
       NAMESPACE: creatogen.ai
-      IMAGE_NAME: creatogen-photoshoot-worker
+      IMAGE_NAME: runpod_photoshoot_worker
       TAG: ${{ github.ref_type == 'tag' && github.ref_name || 'main' }}
 
     steps:
