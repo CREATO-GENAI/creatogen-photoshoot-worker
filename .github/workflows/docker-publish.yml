@@ -47,6 +47,9 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64
           push: true
+          provenance: false        # prevents creating an OCI index
+          sbom: false              # don’t attach SBOM index
+          outputs: type=registry   # push a plain image manifest
           tags: |
             ghcr.io/${{ env.IMAGE_OWNER_LC }}/${{ env.IMAGE_NAME_LC }}:${{ env.TAG }}
             ghcr.io/${{ env.IMAGE_OWNER_LC }}/${{ env.IMAGE_NAME_LC }}:latest
