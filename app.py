@@ -22,7 +22,6 @@ app = FastAPI()
 def health():
     return {"ok": True}
 
-# ---------- helpers ----------
 def _to_png_b64(img: Image.Image) -> str:
     buf = io.BytesIO()
     img.save(buf, format="PNG")
@@ -62,23 +61,17 @@ def _resolve_size(ar: Optional[str], width: Optional[int], height: Optional[int]
     H = int(math.floor(h * scale / 64) * 64)
     return max(512, W), max(512, H)
 
-# ---------- lazy model loader ----------
 def _load_pipeline():
-    """
-    Lazily load heavy models. All heavyweight imports and downloads happen here,
-    not at module import time, so Hub's validator can import the module safely.
-    """
     global PIPE, DEPTH, IP_ADAPTER_LOADED
     if PIPE is not None:
         return
 
-    # Import controlnet-aux lazily to avoid module-import failure on Hub
+    # lazy import so Hub’s validator can import the module safely
     try:
         from controlnet_aux import MidasDetector  # noqa: F401
     except Exception as e:
         raise RuntimeError(
             "Failed to import controlnet_aux / MiDaS. "
-            "This usually means your timm/opencv versions are incompatible. "
             f"Import error: {e}"
         )
 
@@ -97,7 +90,7 @@ def _load_pipeline():
     except Exception:
         pass
 
-    # IP-Adapter (optional)
+    # optional IP-Adapter
     try:
         pipe.load_ip_adapter(
             "h94/IP-Adapter",
@@ -112,12 +105,10 @@ def _load_pipeline():
         except Exception:
             print(f"[warn] IP-Adapter not loaded: {e}")
 
-    # Now that import succeeded, create the detector
-    from controlnet_aux import MidasDetector  # re-import in local scope
+    from controlnet_aux import MidasDetector
     DEPTH = MidasDetector.from_pretrained("lllyasviel/Annotators")
     PIPE = pipe
 
-# ---------- serverless handler ----------
 def handler(event):
     try:
         _load_pipeline()
@@ -135,7 +126,6 @@ def handler(event):
         seed     = inp.get("seed")
         gen      = torch.Generator(device=DEVICE).manual_seed(int(seed)) if seed is not None else None
 
-        # image input
         if inp.get("image_b64"):
             img = _from_b64(inp["image_b64"])
         elif inp.get("image_url"):
@@ -144,7 +134,7 @@ def handler(event):
             return {"error": "Provide image_b64 or image_url"}
 
         init_img = _fit_letterbox(img, W, H, bg=(255, 255, 255))
-        depth    = DEPTH(init_img)  # PIL single-channel
+        depth    = DEPTH(init_img)
 
         ip_kwargs = {}
         if IP_ADAPTER_LOADED:
@@ -189,10 +179,7 @@ def handler(event):
                 "controlnet": CN_DEPTH
             }
         }
-
     except Exception as e:
-        # Never crash the process; return a JSON error so Hub's smoke test doesn't flag build failure.
         return {"error": str(e)}
 
-# Start serverless loop (matches hub.json handler "app:handler")
 runpod.serverless.start({"handler": handler})
