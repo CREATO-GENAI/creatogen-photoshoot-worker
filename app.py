@@ -125,28 +125,33 @@ def handler(event):
         depth    = DEPTH(init_img)  # PIL single-channel
 
         # --- NEW: set IP-Adapter scale (if it loaded)
+        ip_kwargs = {}
         if IP_ADAPTER_LOADED:
             try:
                 PIPE.set_ip_adapter_scale(ip_scale)
             except Exception:
-                pass  # method exists in diffusers ≥0.29/0.30
+                pass
+            ip_kwargs["ip_adapter_image"] = init_img
 
         # run
-        with torch.inference_mode(), torch.autocast(
-            device_type="cuda", dtype=DTYPE if DEVICE == "cuda" else torch.float32
-        ):
+        if DEVICE == "cuda":
+            autocast_ctx = torch.autocast(device_type="cuda", dtype=DTYPE)
+        else:
+            from contextlib import nullcontext
+            autocast_ctx = nullcontext()
+
+        with torch.inference_mode(), autocast_ctx:
             out = PIPE(
                 prompt=prompt,
                 negative_prompt=negative,
                 image=init_img,
                 control_image=depth,
                 controlnet_conditioning_scale=scale_cn,
-                # --- NEW: pass product image to IP-Adapter
-                ip_adapter_image=init_img if IP_ADAPTER_LOADED else None,
                 guidance_scale=guidance,
                 strength=denoise,
                 generator=gen,
                 num_inference_steps=28,
+                **ip_kwargs,
             )
 
         result = out.images[0]
