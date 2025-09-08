@@ -28,5 +28,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app.py .
 
 # Start FastAPI
-EXPOSE 3000
-CMD ["python", "-u", "rp_handler.py"]
+EXPOSE 8000
+CMD ["bash", "-lc", "uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}"]

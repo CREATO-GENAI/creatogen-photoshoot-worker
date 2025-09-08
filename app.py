@@ -6,6 +6,7 @@ from PIL import Image
 import torch
 from diffusers import StableDiffusionXLControlNetPipeline, ControlNetModel
 from controlnet_aux import MidasDetector
+from fastapi import FastAPI
 
 PIPE = None
 DEPTH = None
@@ -15,6 +16,12 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 SDXL_BASE = os.getenv("SDXL_BASE", "stabilityai/stable-diffusion-xl-base-1.0")
 CN_DEPTH  = os.getenv("CN_DEPTH",  "diffusers/controlnet-depth-sdxl-1.0")
 IP_ADAPTER_LOADED = False
+
+app = FastAPI()
+
+@app.get("/health")
+def health():
+    return {"ok": True}
 
 def _to_png_b64(img: Image.Image) -> str:
     buf = io.BytesIO()
