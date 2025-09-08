@@ -29,4 +29,4 @@ COPY app.py .
 
 # Start FastAPI
 EXPOSE 3000
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "3000"]
+CMD ["python", "-u", "rp_handler.py"]
