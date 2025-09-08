@@ -9,7 +9,7 @@ accelerate==1.10.1
 safetensors==0.6.2
 controlnet-aux==0.0.9
 opencv-python-headless==4.10.0.84
-timm==0.6.7
+timm==0.9.16
 einops==0.8.1
 scipy==1.11.4
 huggingface_hub==0.34.4

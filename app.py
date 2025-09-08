@@ -5,7 +5,6 @@ import runpod
 from PIL import Image
 import torch
 from diffusers import StableDiffusionXLControlNetPipeline, ControlNetModel
-from controlnet_aux import MidasDetector
 from fastapi import FastAPI
 
 PIPE = None
@@ -23,6 +22,7 @@ app = FastAPI()
 def health():
     return {"ok": True}
 
+# ---------- helpers ----------
 def _to_png_b64(img: Image.Image) -> str:
     buf = io.BytesIO()
     img.save(buf, format="PNG")
@@ -62,10 +62,25 @@ def _resolve_size(ar: Optional[str], width: Optional[int], height: Optional[int]
     H = int(math.floor(h * scale / 64) * 64)
     return max(512, W), max(512, H)
 
+# ---------- lazy model loader ----------
 def _load_pipeline():
+    """
+    Lazily load heavy models. All heavyweight imports and downloads happen here,
+    not at module import time, so Hub's validator can import the module safely.
+    """
     global PIPE, DEPTH, IP_ADAPTER_LOADED
     if PIPE is not None:
         return
+
+    # Import controlnet-aux lazily to avoid module-import failure on Hub
+    try:
+        from controlnet_aux import MidasDetector  # noqa: F401
+    except Exception as e:
+        raise RuntimeError(
+            "Failed to import controlnet_aux / MiDaS. "
+            "This usually means your timm/opencv versions are incompatible. "
+            f"Import error: {e}"
+        )
 
     controlnet = ControlNetModel.from_pretrained(CN_DEPTH, torch_dtype=DTYPE)
     pipe = StableDiffusionXLControlNetPipeline.from_pretrained(
@@ -82,9 +97,8 @@ def _load_pipeline():
     except Exception:
         pass
 
-    # --- NEW: load IP-Adapter SDXL weights + image encoder
+    # IP-Adapter (optional)
     try:
-        # common layout in h94/IP-Adapter for SDXL
         pipe.load_ip_adapter(
             "h94/IP-Adapter",
             subfolder="sdxl_models",
@@ -92,17 +106,18 @@ def _load_pipeline():
         )
         IP_ADAPTER_LOADED = True
     except Exception as e:
-        # fallbacks for older repo layouts
         try:
             pipe.load_ip_adapter("h94/IP-Adapter", weight_name="ip-adapter-plus_sdxl.safetensors")
             IP_ADAPTER_LOADED = True
-        except Exception as _:
+        except Exception:
             print(f"[warn] IP-Adapter not loaded: {e}")
 
-    PIPE = pipe
+    # Now that import succeeded, create the detector
+    from controlnet_aux import MidasDetector  # re-import in local scope
     DEPTH = MidasDetector.from_pretrained("lllyasviel/Annotators")
+    PIPE = pipe
 
-
+# ---------- serverless handler ----------
 def handler(event):
     try:
         _load_pipeline()
@@ -116,7 +131,7 @@ def handler(event):
         denoise  = max(0.10, min(0.80, denoise))
         guidance = float(inp.get("guidance_scale", 5.5))
         scale_cn = float(inp.get("controlnet_scale", 0.8))
-        ip_scale = float(inp.get("ip_scale", 0.6))  # NEW: IP-Adapter strength
+        ip_scale = float(inp.get("ip_scale", 0.6))
         seed     = inp.get("seed")
         gen      = torch.Generator(device=DEVICE).manual_seed(int(seed)) if seed is not None else None
 
@@ -131,7 +146,6 @@ def handler(event):
         init_img = _fit_letterbox(img, W, H, bg=(255, 255, 255))
         depth    = DEPTH(init_img)  # PIL single-channel
 
-        # --- NEW: set IP-Adapter scale (if it loaded)
         ip_kwargs = {}
         if IP_ADAPTER_LOADED:
             try:
@@ -140,7 +154,6 @@ def handler(event):
                 pass
             ip_kwargs["ip_adapter_image"] = init_img
 
-        # run
         if DEVICE == "cuda":
             autocast_ctx = torch.autocast(device_type="cuda", dtype=DTYPE)
         else:
@@ -178,6 +191,8 @@ def handler(event):
         }
 
     except Exception as e:
+        # Never crash the process; return a JSON error so Hub's smoke test doesn't flag build failure.
         return {"error": str(e)}
-    
+
+# Start serverless loop (matches hub.json handler "app:handler")
 runpod.serverless.start({"handler": handler})
