@@ -12,6 +12,12 @@
     "containerDiskInGb": 40,
     "allowedGpuClasses": ["A10G", "L4", "A100", "H100"]
   },
+
+  "build": {
+    "source": "docker",
+    "image": "ghcr.io/creato-genai/creatogen-photoshoot-worker:latest"
+  },
+
   "presets": [
     {
       "id": "default",
